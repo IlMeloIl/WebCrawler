@@ -2,13 +2,11 @@ package main
 
 import (
 	"fmt"
-	"log"
 	"os"
 )
 
 func main() {
 
-	// fmt.Println(os.Args)
 	if len(os.Args) < 2 {
 		fmt.Println("no website provided")
 		os.Exit(1)
@@ -20,17 +18,12 @@ func main() {
 	url := os.Args[1]
 	fmt.Printf("starting crawl of: %s\n", url)
 
-	html, err := getHTML(url)
-	if err != nil {
-		log.Fatal(err)
+	maxDepth := 10
+	pages := make(map[string]int)
+	crawlPage(url, url, pages, maxDepth, 0)
+
+	for page, depth := range pages {
+		fmt.Printf("%d - %s\n", depth, page)
 	}
 
-	fmt.Println(html)
-
-	// urls, err := getURLsFromHTML(s, url)
-	// if err != nil {
-	// 	log.Fatal(err)
-	// }
-
-	// fmt.Println(urls)
 }

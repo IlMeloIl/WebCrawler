@@ -1,7 +1,7 @@
 package main
 
 import (
-	"fmt"
+	"log"
 	"net/url"
 	"strings"
 
@@ -9,21 +9,24 @@ import (
 	"golang.org/x/net/html/atom"
 )
 
-func staticalizeURL(urlToStaticalize, baseURL string) (string, error) {
-	structURL, err := url.Parse(urlToStaticalize)
+func staticalizeURL(href, base string) (string, error) {
+	hrefURL, err := url.Parse(href)
 	if err != nil {
 		return "", err
 	}
 
-	if structURL.Scheme == "" || structURL.Host == "" {
-		baseStructURL, err := url.Parse(baseURL)
-		if err != nil {
-			return "", err
-		}
-		toReturn := fmt.Sprintf("%s://%s%s", baseStructURL.Scheme, baseStructURL.Host, structURL.Path)
-		return toReturn, nil
+	if hrefURL.IsAbs() {
+		return href, nil
 	}
-	return urlToStaticalize, nil
+
+	baseURL, err := url.Parse(base)
+	if err != nil {
+		return "", err
+	}
+
+	absoluteURL := baseURL.ResolveReference(hrefURL)
+
+	return absoluteURL.String(), nil
 }
 
 func getURLsFromHTML(htmlBody, rawBaseURL string) ([]string, error) {
@@ -40,7 +43,8 @@ func getURLsFromHTML(htmlBody, rawBaseURL string) ([]string, error) {
 				if a.Key == "href" {
 					s, err := staticalizeURL(a.Val, rawBaseURL)
 					if err != nil {
-						return nil, err
+						log.Printf("error staticalizing URL %s: %v\n", a.Val, err)
+						continue
 					}
 					slice = append(slice, s)
 				}
