@@ -5,6 +5,7 @@ import (
 	"log"
 	"net/url"
 	"os"
+	"strconv"
 	"sync"
 )
 
@@ -17,6 +18,7 @@ type config struct {
 }
 
 func newConfig(baseURLString string, maxConcurrency int) (*config, error) {
+
 	parsedBaseURL, err := url.Parse(baseURLString)
 	if err != nil {
 		return nil, fmt.Errorf("error parsing base URL %s: %v", baseURLString, err)
@@ -33,17 +35,33 @@ func newConfig(baseURLString string, maxConcurrency int) (*config, error) {
 
 func main() {
 
-	if len(os.Args) < 2 {
-		fmt.Println("no website provided")
+	if len(os.Args) < 4 {
+		fmt.Println("provide website, max concurrency, and max depth to crawl")
 		os.Exit(1)
-	} else if len(os.Args) > 2 {
+	} else if len(os.Args) > 4 {
 		fmt.Println("too many arguments provided")
 		os.Exit(1)
 	}
 
 	url := os.Args[1]
 
-	cfg, err := newConfig(url, 10)
+	maxConcurrency, err := strconv.Atoi(os.Args[2])
+	if err != nil {
+		log.Fatal("error parsing max concurrency to int: ", err)
+	}
+	if maxConcurrency <= 0 {
+		log.Fatal("max concurrency must be greater than 0")
+	}
+
+	maxDepth, err := strconv.Atoi(os.Args[3])
+	if err != nil {
+		log.Fatal("error parsing max depth to int: ", err)
+	}
+	if maxDepth <= 0 {
+		log.Fatal("max depth must be greater than 0")
+	}
+
+	cfg, err := newConfig(url, maxConcurrency)
 	if err != nil {
 		log.Fatal("error creating new config: ", err)
 	}
@@ -56,7 +74,7 @@ func main() {
 		cfg.concurrencyControl <- struct{}{}
 		defer func() { <-cfg.concurrencyControl }()
 
-		cfg.crawlPage(startURL, 10, 0)
+		cfg.crawlPage(startURL, maxDepth, 0)
 	}(url)
 
 	cfg.wg.Wait()
