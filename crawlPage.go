@@ -5,16 +5,24 @@ import (
 	"net/url"
 )
 
-func crawlPage(rawBaseURL, rawCurrentURL string, pages map[string]int, maxDepth, currentDepth int) {
+func (cfg *config) addPageVisit(normalizedURL string) (isFirstVisit bool) {
+	cfg.mu.Lock()
+	defer cfg.mu.Unlock()
+
+	_, exists := cfg.pages[normalizedURL]
+	if exists {
+		cfg.pages[normalizedURL]++
+		return false
+	}
+
+	cfg.pages[normalizedURL] = 1
+	return true
+}
+
+func (cfg *config) crawlPage(rawCurrentURL string, maxDepth, currentDepth int) {
 
 	if currentDepth > maxDepth {
 		fmt.Printf("max depth %d reached, for %s\n", maxDepth, rawCurrentURL)
-		return
-	}
-
-	structRawBaseURL, err := url.Parse(rawBaseURL)
-	if err != nil {
-		fmt.Printf("error parsing raw base url %s: %v\n", rawBaseURL, err)
 		return
 	}
 
@@ -24,20 +32,15 @@ func crawlPage(rawBaseURL, rawCurrentURL string, pages map[string]int, maxDepth,
 		return
 	}
 
-	if structRawBaseURL.Host != structCurrentURL.Host {
-		// fmt.Printf("skipping %s, not in the same domain as %s\n", rawCurrentURL, rawBaseURL)
+	if cfg.baseURL.Host != structCurrentURL.Host {
 		return
 	}
 
-	// fmt.Printf("DEBUG: Input rawCurrentURL: %s\n", rawCurrentURL)
-
-	absoluteURL, err := staticalizeURL(rawCurrentURL, rawBaseURL)
+	absoluteURL, err := staticalizeURL(rawCurrentURL, cfg.baseURL.String())
 	if err != nil {
 		fmt.Printf("error creating absolute URL %s: %v\n", rawCurrentURL, err)
 		return
 	}
-
-	// fmt.Printf("DEBUG: After staticalizeURL: %s\n", absoluteURL)
 
 	canonicalURL, err := normalizeURL(absoluteURL)
 	if err != nil {
@@ -45,17 +48,9 @@ func crawlPage(rawBaseURL, rawCurrentURL string, pages map[string]int, maxDepth,
 		return
 	}
 
-	// fmt.Printf("DEBUG: After normalizeURL: %s\n", canonicalURL)
-
-	if pages[canonicalURL] >= 1 {
-		// fmt.Printf("current URL %s already crawled %d times, skipping\n", absoluteURL, pages[absoluteURL])
-		pages[canonicalURL]++
-
+	if !cfg.addPageVisit(canonicalURL) {
 		return
 	}
-
-	// fmt.Printf("current URL %s crawling 1st time\n", absoluteURL)
-	pages[canonicalURL] = 1
 
 	html, err := getHTML(absoluteURL)
 	if err != nil {
@@ -69,7 +64,21 @@ func crawlPage(rawBaseURL, rawCurrentURL string, pages map[string]int, maxDepth,
 	}
 
 	for _, u := range urls {
-		crawlPage(rawBaseURL, u, pages, maxDepth, currentDepth+1)
+		if currentDepth+1 <= maxDepth {
+			cfg.wg.Add(1)
+
+			nextURL := u
+			go func(urlToCrawl string, newDepth int) {
+
+				defer cfg.wg.Done()
+
+				cfg.concurrencyControl <- struct{}{}
+
+				defer func() { <-cfg.concurrencyControl }()
+
+				cfg.crawlPage(urlToCrawl, maxDepth, newDepth)
+			}(nextURL, currentDepth+1)
+		}
 	}
 
 	fmt.Printf("finished crawling %s\n", absoluteURL)
